@@ -33,6 +33,8 @@ The native launcher stores Expo's local settings under `.local/expo-settings` wi
 
 ## Protected hosted preview
 
+Live preview: [howieszn-preview.onrender.com](https://howieszn-preview.onrender.com). The user verified sign-in, Connected status, two-tab updates, and saved state after reload. Access requires the preview credentials stored in Render.
+
 The [hosted preview guide](docs/deployment/hosted-preview.md) describes a Render Node application with managed PostgreSQL and a generated preview password. [render.yaml](render.yaml) is the deployment recipe. `npm run preview` serves the built website, API, and WebSockets together and requires `DATABASE_URL` plus its password/origin settings before startup. The host supplies the database connection privately; it never belongs in the client bundle. Creating these files does not deploy or create billable resources.
 
 ## Try the working journey

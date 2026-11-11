@@ -1,6 +1,6 @@
 # Local foundation: implementation and next decisions
 
-Status: working fixture product with React web, Expo/React Native, shared TypeScript rules, local SQLite, and a protected hosted PostgreSQL backend. The user approved Render with managed PostgreSQL. Its adapter and [deployment recipe](../deployment/hosted-preview.md) are implemented and tested against real PostgreSQL 18; no hosting account, service, purchase, or live preview URL has been provisioned by the assistant. No environment publication or production launch is part of this work.
+Status: working fixture product with React web, Expo/React Native, shared TypeScript rules, local SQLite, and a protected hosted PostgreSQL backend. The user deployed the [Render preview](https://howieszn-preview.onrender.com) and confirmed sign-in, Connected status, two-tab updates, and persistence after browser reload on November 11, 2026. This is user-reported live verification; automated live checks were blocked by the workspace's network policy. The [deployment guide](../deployment/hosted-preview.md) separates those results from the real PostgreSQL 18 local rehearsal. No production launch or environment publication is part of this work.
 
 Run instructions are in the [repository README](../../README.md). The [technical plan](11-technical-plan.md) describes architectural boundaries; this report distinguishes executable behavior from future product scope.
 

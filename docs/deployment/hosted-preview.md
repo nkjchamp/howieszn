@@ -4,6 +4,19 @@ The selected architecture is one Render Node application serving React, HTTP com
 
 This is a protected review environment with fictional data and a shared Alex identity. It does not implement personal manager accounts, league membership, live sports ingestion, or production worker coordination.
 
+## Live preview and verification
+
+Preview URL: [https://howieszn-preview.onrender.com](https://howieszn-preview.onrender.com)
+
+The user deployed revision `97e2c10` through Render and confirmed the following live browser checks on November 11, 2026:
+
+- Preview sign-in succeeds.
+- The application shows Connected.
+- Saving a league-name change updates a second tab without refreshing.
+- The saved name remains after reloading.
+
+This is user-reported live verification. The assistant's direct request to `/healthz` was blocked by the workspace proxy at CONNECT with HTTP 403, so no automated live health response or authenticated live browser test is claimed. Backend restart, scoring, and capture were tested in the local PostgreSQL/HTTPS/WSS rehearsal described below; a live backend restart has not been verified.
+
 ## Resources and cost boundary
 
 [render.yaml](../../render.yaml) declares two resources in the same Oregon region:
@@ -13,7 +26,7 @@ This is a protected review environment with fictional data and a shared Alex ide
 | Application | Native Node 24.22.1, Starter plan, one instance |
 | Database | PostgreSQL 18, `basic-256mb`, 5 GB storage, private application access |
 
-These are billable-plan identifiers, not price quotes. Current charges, billing requirements, plan availability, and retention/backup options must be reviewed in Render's dashboard before creating resources. No service, database, purchase, or live URL has been provisioned by the assistant.
+These are billable-plan identifiers, not price quotes. The user created the application and database through Render; exact charges and retention/backup settings remain unavailable to the assistant. Review current dashboard charges before changing resources. No hosting account or purchase was made by the assistant.
 
 The application has no persistent local disk requirement. Its database connection comes from Render's private `fromDatabase.connectionString` binding. `ipAllowList: []` disables external database connections while allowing Render's internal connection. Keep the application and database in the same region.
 
