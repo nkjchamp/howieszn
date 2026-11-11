@@ -1,0 +1,38 @@
+# Prepared deployment recipe. Creating this file does not create a service.
+# Review current application/database charges in the dashboard before deploying.
+services:
+  - type: web
+    name: howieszn-preview
+    runtime: node
+    plan: starter
+    region: oregon
+    numInstances: 1
+    autoDeploy: false
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run preview
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: howieszn-preview-db
+          property: connectionString
+      - key: PREVIEW_USERNAME
+        value: preview
+      - key: PREVIEW_PASSWORD
+        generateValue: true
+
+databases:
+  - name: howieszn-preview-db
+    region: oregon
+    plan: basic-256mb
+    postgresMajorVersion: "18"
+    databaseName: howieszn_preview
+    user: howieszn
+    diskSizeGB: 5
+    ipAllowList: []

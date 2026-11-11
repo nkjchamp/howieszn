@@ -1,0 +1,30 @@
+{
+  "name": "howieszn",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.3.0 <25"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "npm run dev --workspace @howieszn/server",
+    "dev:web": "npm run dev --workspace @howieszn/web",
+    "dev:native": "npm run start --workspace @howieszn/native",
+    "preview": "node scripts/preview.mjs",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspace @howieszn/domain && npm run test --workspace @howieszn/client && npm run test --workspace @howieszn/server && npm run test --workspace @howieszn/native && node --test scripts/preview.test.mjs",
+    "test:postgres": "node scripts/test-postgres.mjs",
+    "build": "npm run build --workspace @howieszn/web",
+    "export:native": "npm run export --workspace @howieszn/native"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "19.3.0",
+    "typescript": "7.0.2"
+  }
+}

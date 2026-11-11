@@ -1,0 +1,12 @@
+node_modules/
+.local/
+.cache/
+.expo/
+dist/
+coverage/
+docs/diagnostics/
+*.tsbuildinfo
+.env*
+!.env.example
+!.env.*.example
+*.log

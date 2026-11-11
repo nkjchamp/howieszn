@@ -1,0 +1,6 @@
+{
+  "name": "@howieszn/web", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": { "dev": "vite --host 127.0.0.1 --port 5173", "build": "tsc --noEmit -p tsconfig.json && vite build", "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": { "@howieszn/domain": "*", "@howieszn/client": "*", "@howieszn/tokens": "*", "react": "19.3.0", "react-dom": "19.3.0" },
+  "devDependencies": { "@types/react-dom": "19.3.0", "@vitejs/plugin-react": "6.3.0", "vite": "8.3.8" }
+}

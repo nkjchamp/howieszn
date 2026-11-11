@@ -1,0 +1,22 @@
+{
+  "name": "@howieszn/native",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "start": "node ../../scripts/native.mjs start",
+    "export": "node ../../scripts/native.mjs export",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test components/*.test.ts"
+  },
+  "dependencies": {
+    "@howieszn/domain": "*",
+    "@howieszn/client": "*",
+    "@howieszn/tokens": "*",
+    "expo": "58.0.24",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "5.11.1"
+  }
+}

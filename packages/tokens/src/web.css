@@ -1,0 +1,6 @@
+:root {
+  --ink:#202b29; --muted:#69746f; --paper:#f6f7f3; --line:#dce2da;
+  --green:#23614c; --lime:#ddf3b8; --white:#fff; --danger:#9e3e2f; --warning:#8a642b;
+  --space-xs:4px; --space-sm:8px; --space-md:12px; --space-lg:16px; --space-xl:24px; --space-xxl:32px;
+  --radius-sm:8px; --radius-md:12px; --radius-lg:16px; --radius-xl:20px;
+}

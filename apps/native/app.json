@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Howieszn Preview",
+    "slug": "howieszn-preview",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": { "supportsTablet": true },
+    "extra": { "preview": true }
+  }
+}
