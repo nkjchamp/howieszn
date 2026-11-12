@@ -2,6 +2,8 @@
 
 Design draft v0.1. This extends [commissioner setup](08-commissioner-setup-walkthrough.md) into drafting, beginning with the confirmed team-owned, per-team draft configuration. [Clickable draft prototype](../prototypes/draft-room/index.html) · [format rules](07-playoff-absorption.md) · [product brief](01-product-brief.md) · [decisions](06-decisions.md).
 
+This document describes the earlier independent HTML study. The current React draft room's revised hierarchy and validation are recorded in [15](15-draft-room-hierarchy.md).
+
 ## Sample and boundaries
 
 **Fourth & Friends** is fictional. Alex, Jordan, Sam, and Casey each manage four of sixteen teams. Each team drafts six players for SFLEX, WR, RB, TE, DEF/K, and FLEX, with no initial bench. Empty starting slots are allowed under the selected template. Actual player positions remain QB/RB/WR/TE/K/DEF; SFLEX and FLEX describe lineup eligibility.

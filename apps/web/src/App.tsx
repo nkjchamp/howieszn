@@ -62,8 +62,8 @@ export function App() {
     {(league.error || league.uncertainCommand) && <div className="global-alert" role="alert"><div><b>{league.uncertainCommand ? 'The previous action is not confirmed.' : league.error?.code === 'REVISION_CONFLICT' ? 'Another update arrived.' : 'Action needs attention.'}</b> {league.uncertainCommand ? 'Your edits are preserved. Confirm its saved result before making another change.' : league.error?.message}</div>{league.uncertainCommand ? <Button variant="primary" disabled={league.pending} onClick={() => { void confirmPreviousAction(); }}>{league.pending ? 'Confirming…' : 'Confirm previous action'}</Button> : <Button variant="quiet" onClick={() => { void league.refresh(); }}>Refresh state</Button>}</div>}
     {pendingCorrections.length > 0 && <div className="global-alert" role="alert"><div><b>{pendingCorrections.length} result {pendingCorrections.length === 1 ? 'needs' : 'need'} commissioner review.</b> Corrected facts changed a published result. The published winner and roster transfers stay in place.</div><Button variant="quiet" onClick={() => navigate('matchups')}>Review corrections</Button></div>}
     {changedCaptures.length > 0 && <div className="global-alert" role="status"><div><b>A stat correction changed advancement.</b> The result and roster transfer were updated inside the correction window. Review the affected next-round lineups.</div><Button variant="quiet" onClick={() => navigate('matchups')}>View changed result</Button></div>}
-    {notice && <div className="notice" role="status"><span>{notice}</span><button aria-label="Dismiss notice" onClick={() => setNotice('')}>×</button></div>}
-    {!state ? <main className="loading-screen"><div className="eyebrow">Your league, your rules</div><h1>{league.loading ? 'Opening your league.' : 'Your league server is offline.'}</h1><p>{league.loading ? 'Getting the latest saved state.' : 'Start the local server, then reconnect. Your existing data stays saved.'}</p><Button variant="primary" onClick={() => { void league.refresh(); }}>Reconnect</Button></main> : <main className="app-main">
+    {notice && <div className={`notice ${view === 'draft' ? 'draft-notice' : ''}`} role="status"><span>{notice}</span><button aria-label="Dismiss notice" onClick={() => setNotice('')}>×</button></div>}
+    {!state ? <main className="loading-screen"><div className="eyebrow">Your league, your rules</div><h1>{league.loading ? 'Opening your league.' : 'Your league server is offline.'}</h1><p>{league.loading ? 'Getting the latest saved state.' : 'Start the local server, then reconnect. Your existing data stays saved.'}</p><Button variant="primary" onClick={() => { void league.refresh(); }}>Reconnect</Button></main> : <main className={`app-main ${view === 'draft' ? 'app-main-draft' : ''}`}>
       <div hidden={view !== 'home'}><Home {...shared!} navigate={navigate} onTeam={id => { setTeamId(id); navigate('teams'); }} /></div>
       <div hidden={view !== 'setup'}><Setup {...shared!} /></div>
       <div hidden={view !== 'draft'}><DraftRoom {...shared!} /></div>
@@ -140,50 +140,189 @@ function Setup({ state, send, writable, pending, notify }: SharedProps) {
 interface PickConfirmation { playerId: string; teamId: string; pickIndex: number; revision: number }
 function DraftRoom({ state, viewerId, send, writable, pending, notify }: SharedProps) {
   const recovery = useContext(RecoveryContext);
-  useEffect(() => { setDialogError(''); }, [recovery.confirmed]);
-  const ownTeams = state.teams.filter(team => isOwn(team, viewerId));
-  const [viewTeamId, setViewTeamId] = useState(ownTeams[0]?.id ?? state.teams[0].id);
-  const [query, setQuery] = useState(''), [position, setPosition] = useState('ALL');
+  const [viewTeamId, setViewTeamId] = useState(() => state.teams.find(team => isOwn(team, viewerId))?.id ?? state.teams[0].id);
+  const [query, setQuery] = useState('');
+  const [position, setPosition] = useState('ALL');
+  const [availableOnly, setAvailableOnly] = useState(true);
   const [selectedId, setSelectedId] = useState(state.players[0]?.id ?? '');
   const [researchOpen, setResearchOpen] = useState(false);
-  function selectPlayer(id: string) { setSelectedId(id); if (window.matchMedia('(max-width:1000px)').matches) setResearchOpen(true); }
-  const [availableOnly, setAvailableOnly] = useState(true);
   const [mobileTab, setMobileTab] = useState<'players' | 'queue' | 'roster' | 'board'>('players');
+  const [boardExpanded, setBoardExpanded] = useState(false);
   const [confirmation, setConfirmation] = useState<PickConfirmation | null>(null);
   const [dialogError, setDialogError] = useState('');
-  const selected = playerById(state, selectedId), target = getCurrentDraftTeam(state), viewed = teamById(state, viewTeamId) ?? ownTeams[0];
+  const queueListRef = useRef<HTMLDivElement>(null);
+  const boardTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobilePlayersTabRef = useRef<HTMLButtonElement>(null);
+  const keyboardReorder = useRef<{ teamId: string; playerId: string; direction: 'up' | 'down' } | null>(null);
+  useEffect(() => { setDialogError(''); }, [recovery.confirmed]);
+  useEffect(() => {
+    const changedFocus = (event: FocusEvent) => {
+      const intent = keyboardReorder.current;
+      if (!intent || !(event.target instanceof Node)) return;
+      const row = findQueueRow(intent.playerId, intent.teamId);
+      if (event.target !== document.body && !row?.contains(event.target)) keyboardReorder.current = null;
+    };
+    document.addEventListener('focusin', changedFocus);
+    return () => document.removeEventListener('focusin', changedFocus);
+  }, []);
+  useEffect(() => {
+    const mobile = window.matchMedia('(max-width:900px)');
+    const changed = (event: MediaQueryListEvent) => { if (!event.matches) setResearchOpen(false); };
+    mobile.addEventListener('change', changed);
+    return () => mobile.removeEventListener('change', changed);
+  }, []);
+
+  const ownTeams = state.teams.filter(team => isOwn(team, viewerId));
+  const viewed = teamById(state, viewTeamId) ?? ownTeams[0] ?? state.teams[0];
+  const target = getCurrentDraftTeam(state);
+  const selected = playerById(state, selectedId);
+  const pickIndex = state.draft.picks.length;
+  const complete = state.draft.status === 'complete';
+  const paused = state.draft.status === 'paused';
+  const lobby = state.draft.status === 'lobby';
+  const ownViewedTeam = isOwn(viewed, viewerId);
+  const yourTurn = target?.managerId === viewerId;
+  const boardVisible = boardExpanded || mobileTab === 'board';
   const takenIds = useMemo(() => new Set(state.draft.picks.map(pick => pick.playerId)), [state.draft.picks]);
   const viewQueue = state.draft.queues[viewed.id] ?? [];
   const available = state.players.filter(player => (!availableOnly || !takenIds.has(player.id)) && (position === 'ALL' || player.position === position) && `${player.name} ${player.nflTeam}`.toLowerCase().includes(query.toLowerCase()));
-  const yourTurn = target?.managerId === viewerId;
+  const takenPick = state.draft.picks.find(pick => pick.playerId === selectedId);
   const selectedFits = Boolean(selected && target && !takenIds.has(selected.id) && fitRoster([...currentRoster(state, target.id), selected]));
   const canDraft = writable && state.draft.status === 'running' && yourTurn && selectedFits;
-  const pickIndex = state.draft.picks.length;
-  const queueWritable = writable && state.draft.status !== 'complete';
-  async function act(command: Command, success: string) { try { await send(command, state.revision); notify(success); } catch { /* The shared client exposes the failure and keeps selection intact. */ } }
-  function openConfirmation() { if (!selected || !target || !canDraft) return; setResearchOpen(false); setDialogError(''); setConfirmation({ playerId: selected.id, teamId: target.id, pickIndex, revision: state.revision }); }
-  async function submit() { if (!confirmation) return; if (confirmation.pickIndex !== state.draft.picks.length || confirmation.teamId !== getCurrentDraftTeam(state)?.id) { setDialogError('The turn changed while you reviewed. No pick was submitted. Close this dialog and review the current destination.'); return; } try { await send({ type: 'draft.pick', playerId: confirmation.playerId, teamId: confirmation.teamId, expectedPickIndex: confirmation.pickIndex }, confirmation.revision); setConfirmation(null); notify(`${playerById(state, confirmation.playerId)?.name} drafted for ${teamById(state, confirmation.teamId)?.name}.`); } catch (error) { setDialogError(errorMessage(error)); } }
-  async function toggleQueue(id: string) { if (!isOwn(viewed, viewerId)) return; const ids = viewQueue.includes(id) ? viewQueue.filter(value => value !== id) : [...viewQueue, id]; await act({ type: 'draft.queue', teamId: viewed.id, playerIds: ids }, 'Team queue saved.'); }
-  async function moveQueue(index: number, direction: number) { const next = [...viewQueue], other = index + direction; if (other < 0 || other >= next.length) return; [next[index], next[other]] = [next[other], next[index]]; await act({ type: 'draft.queue', teamId: viewed.id, playerIds: next }, 'Queue order saved.'); }
+  const queueWritable = writable && !complete && ownViewedTeam;
   const assignment = fitRoster(currentRoster(state, viewed.id)) ?? {};
-  const takenPick = state.draft.picks.find(pick => pick.playerId === selectedId);
-  const researchContent = (selected ? <><div className="research-body"><div className={`player-mark pos-${selected.position.toLowerCase()}`}>{selected.position}</div><h2>{selected.name}</h2><div className="player-meta"><PositionBadge position={selected.position} />{selected.nflTeam} · Sample rank {selected.rank}</div><dl className="research-facts"><div><dt>Eligible slots</dt><dd>{eligibleSlots(selected).join(' · ')}</dd></div><div><dt>Pick destination</dt><dd>{target?.name ?? 'Draft complete'}</dd></div></dl><p className="hint">{takenPick ? `Drafted for ${teamById(state, takenPick.teamId)?.name}.` : !selectedFits && target ? 'No eligible starting slot on the picking team.' : 'Natural position and flex eligibility determine roster fit.'}</p></div><div className="research-actions"><Button variant="primary" disabled={!canDraft || pending} onClick={openConfirmation}>{pending ? 'Submitting…' : takenPick ? 'Already drafted' : state.draft.status === 'complete' ? 'Draft complete' : yourTurn && target ? `Draft for ${target.name}` : 'Waiting for your turn'}</Button><Button disabled={!queueWritable || Boolean(takenPick) || !isOwn(viewed, viewerId)} onClick={() => { void toggleQueue(selected.id); }}>{viewQueue.includes(selected.id) ? 'Remove from queue' : 'Queue'} · {viewed.name}</Button></div></> : <div className="empty-state">Select a player.</div>);
-  return <>
-    <div className="page-title draft-title"><div><div className="eyebrow">{state.name} / Draft room</div><h1>{state.draft.status === 'lobby' ? 'Your draft starts here.' : state.draft.status === 'complete' ? 'Sixteen teams. Ready to compete.' : target ? `${target.name} is on the clock.` : 'Draft complete.'}</h1><p>{state.draft.status === 'lobby' ? 'Every pick belongs to a team. Everyone gets a shot.' : `Team-owned · ${state.draft.picks.length}/96 picks · Six snake rounds`}</p></div><span className={`status-pill ${state.draft.status === 'paused' ? 'warn' : ''}`}>{state.draft.status === 'running' ? `Pick ${pickLabel(pickIndex)}` : state.draft.status}</span></div>
-    {state.draft.status === 'lobby' ? <div className="draft-lobby"><Panel title="Your people"><div className="manager-list">{state.managers.map(manager => <div key={manager.id}><span className="avatar">{manager.name[0]}</span><div><h3>{manager.name}{manager.id === viewerId ? ' · You' : ''}</h3><p>{state.teams.filter(team => team.managerId === manager.id).length} teams{manager.commissioner ? ' · Commissioner' : ''}</p></div><span className="small">Fixture manager</span></div>)}</div></Panel><Panel title="Draft at a glance"><div className="panel-body"><dl className="summary-list"><div><dt>Seats</dt><dd>16 teams</dd></div><div><dt>Rounds</dt><dd>6 · Reverses every round</dd></div><div><dt>Initial bench</dt><dd>None · Six starters</dd></div></dl><div className="slot-pills">{SLOTS.map(slot => <span key={slot}>{slot}</span>)}</div><p className="hint">This starts the saved league’s draft. It does not invite or simulate connected managers.</p><Button variant="primary" onClick={() => { void act({ type: 'draft.start' }, 'Draft started.'); }} disabled={!writable}>Start draft</Button></div></Panel></div> : <>
-      <div className={`turn-banner ${state.draft.status === 'paused' ? 'paused' : ''}`}><div><b>{state.draft.status === 'paused' ? 'Draft paused.' : target ? `${yourTurn ? 'Your turn. ' : ''}Pick destination: ${target.name}` : 'All picks completed.'}</b><span>{target ? 'Viewing another roster never redirects this pick.' : 'Your drafted players are saved with their teams.'}</span></div>{state.draft.status !== 'complete' && <Button disabled={!writable} onClick={() => { void act({ type: state.draft.status === 'paused' ? 'draft.resume' : 'draft.pause' }, state.draft.status === 'paused' ? 'Draft resumed.' : 'Draft paused.'); }}>{state.draft.status === 'paused' ? 'Resume draft' : 'Pause draft'}</Button>}</div>
-      <section className={`panel draft-board mobile-draft-${mobileTab}`}><div className="panel-heading"><h2>Draft board</h2><span className="small">Your teams shaded · Draft turns belong to teams</span></div><div className="board-scroll" tabIndex={0} aria-label="Six-round draft board; scroll for all teams"><div className="board-grid"><div />{state.draft.order.map(id => { const team = teamById(state, id)!; return <button key={id} className={`board-team ${isOwn(team, viewerId) ? 'mine' : ''}`} onClick={() => setViewTeamId(id)}><b>{state.managers.find(manager => manager.id === team.managerId)?.name}</b><span>Team {team.name.match(/\d+$/)?.[0]}</span></button>; })}{Array.from({ length: 6 }, (_, round) => <BoardRound key={round} state={state} round={round} pickIndex={pickIndex} onPlayer={selectPlayer} />)}</div></div></section>
-      <div className="draft-view-controls"><label>Viewing roster & queue<select aria-label="Viewing team roster and queue" value={viewed.id} onChange={event => setViewTeamId(event.target.value)}>{state.managers.map(manager => <optgroup key={manager.id} label={manager.id === viewerId ? 'My teams' : `${manager.name}’s teams`}>{state.teams.filter(team => team.managerId === manager.id).map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</optgroup>)}</select></label><div className="my-team-switches" role="group" aria-label="Quick switch my teams">{ownTeams.map(team => <button key={team.id} aria-pressed={viewed.id === team.id} onClick={() => setViewTeamId(team.id)}>Team {team.name.match(/\d+$/)?.[0]}</button>)}</div></div>
-      <div className="draft-mobile-tabs" role="group" aria-label="Draft workspace">{(['players', 'queue', 'roster', 'board'] as const).map(tab => <button key={tab} aria-pressed={mobileTab === tab} onClick={() => setMobileTab(tab)}>{tab === 'roster' ? 'My teams' : tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
-      <div className={`draft-workspace tab-${mobileTab}`}>
-        <Panel title="Players" accessory={<span className="small">{available.length} shown · Fixture ranks</span>} className="player-pool"><div className="pool-controls"><input type="search" aria-label="Search draft players" placeholder="Search players or NFL team" value={query} onChange={event => setQuery(event.target.value)} /><select aria-label="Draft position filter" value={position} onChange={event => setPosition(event.target.value)}>{['ALL', ...POSITIONS].map(pos => <option key={pos}>{pos}</option>)}</select><label className="checkbox-label"><input type="checkbox" checked={availableOnly} onChange={event => setAvailableOnly(event.target.checked)} />Available players only</label></div><div className="player-scroll"><table className="player-table"><thead><tr><th>#</th><th>Player</th><th>Pos</th><th>NFL</th><th>Queue</th></tr></thead><tbody>{available.map(player => <tr key={player.id} className={selectedId === player.id ? 'selected' : ''}><td>{player.rank}</td><td><button className="player-name" onClick={() => selectPlayer(player.id)}>{player.name}</button>{takenIds.has(player.id) && <span className="small taken">Drafted</span>}</td><td><PositionBadge position={player.position} /></td><td>{player.nflTeam}</td><td><button className="queue-button" disabled={!queueWritable || takenIds.has(player.id) || !isOwn(viewed, viewerId)} aria-label={`${viewQueue.includes(player.id) ? 'Remove' : 'Queue'} ${player.name} for ${viewed.name}`} onClick={() => { void toggleQueue(player.id); }}>{viewQueue.includes(player.id) ? '✓' : '+'}</button></td></tr>)}</tbody></table>{!available.length && <p className="empty-state">No players match your search.</p>}</div></Panel>
-        <Panel title="Player research" className="research-panel">{researchContent}</Panel>
-        <div className="draft-team-panels"><Panel title="Queue" accessory={<span className="small">{viewed.name}</span>} className="team-queue"><div className="queue-scroll">{!isOwn(viewed, viewerId) ? <p className="empty-state">Another manager’s queue is private.</p> : !viewQueue.length ? <p className="empty-state">Add players from the pool. This queue belongs to this team.</p> : viewQueue.map((id, index) => { const player = playerById(state, id); return player ? <div className="queue-row" key={id}><span>{index + 1}</span><div><b>{player.name}</b><small>{player.position} · {player.nflTeam}</small></div><button aria-label={`Move ${player.name} up`} disabled={!queueWritable || index === 0} onClick={() => { void moveQueue(index, -1); }}>↑</button><button aria-label={`Move ${player.name} down`} disabled={!queueWritable || index === viewQueue.length - 1} onClick={() => { void moveQueue(index, 1); }}>↓</button><button aria-label={`Remove ${player.name} from queue`} disabled={!queueWritable} onClick={() => { void toggleQueue(id); }}>×</button></div> : null; })}</div><p className="queue-caption">Local replay autopick: first eligible queued player, then fixture rank.</p></Panel><Panel title="Roster" accessory={<span className="small">{viewed.playerIds.length}/6 drafted</span>} className="draft-roster"><div>{SLOTS.map(slot => { const player = playerById(state, assignment[slot]); return <div className="compact-roster-row" key={slot}><span>{slot}</span>{player ? <><b>{player.name}</b><small>{player.position}</small></> : <em>Open</em>}</div>; })}</div></Panel></div>
+  const upcoming = Array.from({ length: Math.min(3, Math.max(0, 95 - pickIndex)) }, (_, offset) => {
+    const index = pickIndex + offset + 1;
+    return { index, team: teamById(state, draftTeamIdAt(state, index) ?? undefined)! };
+  });
+  const turnAdvanced = Boolean(confirmation && (confirmation.pickIndex !== pickIndex || confirmation.teamId !== target?.id));
+  useEffect(() => {
+    const intent = keyboardReorder.current;
+    if (!intent) return;
+    if (intent.teamId !== viewed.id || !viewQueue.includes(intent.playerId)) { keyboardReorder.current = null; return; }
+    const row = findQueueRow(intent.playerId, intent.teamId);
+    const active = document.activeElement;
+    if (!row || (active !== document.body && !row.contains(active))) { keyboardReorder.current = null; return; }
+    if (pending || !queueWritable) return;
+    const buttons = Array.from(row.querySelectorAll<HTMLButtonElement>('button[data-queue-direction]'));
+    const control = buttons.find(button => button.dataset.queueDirection === intent.direction && !button.disabled) ?? buttons.find(button => !button.disabled);
+    keyboardReorder.current = null;
+    control?.focus({ preventScroll: true });
+  }, [pending, queueWritable, viewed.id, viewQueue]);
+
+  function findQueueRow(playerId: string, teamId: string): HTMLElement | undefined {
+    return Array.from(queueListRef.current?.querySelectorAll<HTMLElement>('[data-queue-player-id]') ?? []).find(row => row.dataset.queuePlayerId === playerId && row.dataset.queueTeamId === teamId);
+  }
+  function reorderQueue(index: number, direction: -1 | 1, keyboard: boolean) {
+    keyboardReorder.current = keyboard ? { teamId: viewed.id, playerId: viewQueue[index], direction: direction === -1 ? 'up' : 'down' } : null;
+    void moveQueue(index, direction);
+  }
+
+  function selectPlayer(id: string) {
+    setSelectedId(id);
+    if (window.matchMedia('(max-width:900px)').matches) setResearchOpen(true);
+  }
+  function closeBoard() {
+    setBoardExpanded(false);
+    if (mobileTab === 'board') setMobileTab('players');
+    const focusTarget = window.matchMedia('(min-width:901px)').matches ? boardTriggerRef.current : mobilePlayersTabRef.current;
+    focusTarget?.focus({ preventScroll: true });
+  }
+  function toggleBoard() {
+    if (boardVisible) closeBoard();
+    else { setBoardExpanded(true); if (window.matchMedia('(max-width:900px)').matches) setMobileTab('board'); }
+  }
+  function selectBoardPlayer(id: string) {
+    selectPlayer(id);
+    if (window.matchMedia('(min-width:901px)').matches) closeBoard();
+  }
+  async function act(command: Command, success: string) {
+    try { await send(command, state.revision); notify(success); }
+    catch { /* The shared client retains the failed intent and exposes recovery. */ }
+  }
+  function openConfirmation() {
+    if (!selected || !target || !canDraft) return;
+    setResearchOpen(false);
+    setDialogError('');
+    setConfirmation({ playerId: selected.id, teamId: target.id, pickIndex, revision: state.revision });
+  }
+  async function submit() {
+    if (!confirmation) return;
+    if (state.draft.status !== 'running') { setDialogError('The draft is not running. Your original pick is preserved; review the draft before submitting.'); return; }
+    if (confirmation.pickIndex !== pickIndex || confirmation.teamId !== target?.id) { setDialogError('The turn changed while you reviewed. No pick was submitted. Close this dialog and review the current destination.'); return; }
+    try {
+      await send({ type: 'draft.pick', playerId: confirmation.playerId, teamId: confirmation.teamId, expectedPickIndex: confirmation.pickIndex }, confirmation.revision);
+      setConfirmation(null);
+      notify(`${playerById(state, confirmation.playerId)?.name} drafted for ${teamById(state, confirmation.teamId)?.name}.`);
+    } catch (error) { setDialogError(errorMessage(error)); }
+  }
+  async function toggleQueue(id: string) {
+    if (!ownViewedTeam) return;
+    const ids = viewQueue.includes(id) ? viewQueue.filter(value => value !== id) : [...viewQueue, id];
+    await act({ type: 'draft.queue', teamId: viewed.id, playerIds: ids }, 'Team queue saved.');
+  }
+  async function moveQueue(index: number, direction: number) {
+    const next = [...viewQueue], other = index + direction;
+    if (other < 0 || other >= next.length) return;
+    [next[index], next[other]] = [next[other], next[index]];
+    await act({ type: 'draft.queue', teamId: viewed.id, playerIds: next }, 'Queue order saved.');
+  }
+
+  const researchContent = selected ? <>
+    <div className="dr-research-body">
+      <div className="dr-research-label">Player details <span>Fixture data</span></div>
+      <div className="dr-player-heading"><div className={`dr-player-mark pos-${selected.position.toLowerCase()}`}>{selected.position}</div><div><h2>{selected.name}</h2><div className="player-meta"><span>{selected.nflTeam}</span></div></div></div>
+      <dl className="dr-player-details"><div><dt>Fixture rank</dt><dd>#{selected.rank}</dd></div><div><dt>Eligible slots</dt><dd>{eligibleSlots(selected).join(' · ')}</dd></div></dl>
+      <div className={`dr-player-status ${takenPick ? 'taken' : selectedFits ? 'eligible' : ''}`}>{takenPick ? `Drafted by ${teamById(state, takenPick.teamId)?.name}` : complete ? 'Draft complete' : selectedFits ? 'Eligible for the picking team' : 'No eligible starting slot on the picking team'}</div>
+      <div className="dr-pick-target"><span>{complete ? 'Draft result' : 'Picking team'}</span><strong>{target?.name ?? 'All 96 picks are in'}</strong>{target && <small>Pick {pickLabel(pickIndex)}{yourTurn ? ' · Your turn' : ''}</small>}</div>
+    </div>
+    <div className="dr-research-actions">
+      <Button variant="primary" className="dr-pick-button" disabled={!canDraft || pending} onClick={openConfirmation}>{pending ? 'Submitting…' : takenPick ? 'Already drafted' : complete ? 'Draft complete' : paused ? 'Draft paused' : yourTurn && target ? `Draft for ${target.name}` : 'Waiting for your turn'}</Button>
+      <Button disabled={!queueWritable || Boolean(takenPick)} onClick={() => { void toggleQueue(selected.id); }}>{viewQueue.includes(selected.id) ? 'Remove from queue' : 'Queue'} · {viewed.name}</Button>
+    </div>
+  </> : <div className="empty-state">Select a player to view details.</div>;
+
+  return <div className="dr-room" data-mobile-tab={mobileTab} data-status={state.draft.status} data-board-open={boardVisible}>
+    <header className="dr-header">
+      <div className="dr-title"><div className="eyebrow">{state.name}</div><h1>Draft room</h1></div>
+      <div className={`dr-live-turn ${yourTurn && !paused && !complete ? 'is-yours' : ''}`} aria-live="polite">
+        <span className="dr-turn-label">{lobby ? 'Draft lobby' : complete ? 'Draft complete' : paused ? 'Draft paused' : yourTurn ? 'Your turn' : 'Now picking'}</span>
+        <strong>{lobby ? '16 teams · 6 rounds' : target?.name ?? 'Ready to compete'}</strong>
+        <span className="dr-turn-meta">{lobby ? 'Team-owned rosters · Snake draft' : complete ? 'Your players are saved with their teams' : `Pick ${pickLabel(pickIndex)} · Round ${Math.floor(pickIndex / 16) + 1} of 6`}</span>
+      </div>
+      <div className="dr-header-actions">{!lobby && !complete && <Button disabled={!writable} onClick={() => { void act({ type: paused ? 'draft.resume' : 'draft.pause' }, paused ? 'Draft resumed.' : 'Draft paused.'); }}>{paused ? 'Resume draft' : 'Pause draft'}</Button>}</div>
+    </header>
+
+    {lobby ? <div className="dr-lobby">
+      <Panel title="Draft at a glance"><div className="panel-body"><p>Six starters per team. Each pick belongs to one team.</p><div className="slot-pills">{SLOTS.map(slot => <span key={slot}>{slot}</span>)}</div><dl className="summary-list"><div><dt>Teams</dt><dd>16</dd></div><div><dt>Draft</dt><dd>6 snake rounds · 96 picks</dd></div><div><dt>Initial bench</dt><dd>None</dd></div></dl><Button variant="primary" onClick={() => { void act({ type: 'draft.start' }, 'Draft started.'); }} disabled={!writable}>Start draft</Button><p className="hint">Local fixture managers are not connected participants.</p></div></Panel>
+      <Panel title="Managers"><div className="manager-list">{state.managers.map(manager => <div key={manager.id}><span className="avatar">{manager.name[0]}</span><div><h3>{manager.name}{manager.id === viewerId ? ' · You' : ''}</h3><p>{state.teams.filter(team => team.managerId === manager.id).length} teams{manager.commissioner ? ' · Commissioner' : ''}</p></div></div>)}</div></Panel>
+    </div> : <>
+      <div className="dr-progress"><div className="dr-progress-count"><strong>{pickIndex}<span>/96</span></strong><span>picks made</span></div><progress value={pickIndex} max={96} aria-label="Draft picks completed" /><div className="dr-upcoming" aria-label="Upcoming picks">{upcoming.map(({ index, team }) => <div key={index} className={isOwn(team, viewerId) ? 'mine' : ''}><span>{pickLabel(index)}</span><b>{team.name}</b></div>)}</div><button type="button" className="button secondary dr-board-toggle" ref={boardTriggerRef} aria-expanded={boardVisible} aria-controls="draft-full-board" onClick={toggleBoard}>{boardVisible ? 'Hide draft board' : 'View draft board'} <span aria-hidden="true">{boardVisible ? '−' : '+'}</span></button></div>
+
+      <div className="dr-mobile-tabs" role="group" aria-label="Draft workspace">{(['players', 'queue', 'roster', 'board'] as const).map(tab => <button key={tab} ref={tab === 'players' ? mobilePlayersTabRef : undefined} aria-pressed={mobileTab === tab} onClick={() => setMobileTab(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}</div>
+
+      <div className="dr-board-anchor"><section id="draft-full-board" className="panel dr-board" aria-label="Draft board" hidden={!boardVisible} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); closeBoard(); } }}><div className="dr-board-header"><h2>Draft board</h2><span>16 teams · 6 snake rounds</span><button type="button" className="button quiet" onClick={closeBoard}>Close board</button></div><div className="dr-board-scroll" tabIndex={0} aria-label="Six-round draft board; scroll for all teams"><div className="board-grid"><div />{state.draft.order.map(id => { const team = teamById(state, id)!; return <button key={id} className={`board-team ${isOwn(team, viewerId) ? 'mine' : ''}`} onClick={() => setViewTeamId(id)}><b>{state.managers.find(manager => manager.id === team.managerId)?.name}</b><span>Team {team.name.match(/\d+$/)?.[0]}</span></button>; })}{Array.from({ length: 6 }, (_, round) => <BoardRound key={round} state={state} round={round} pickIndex={pickIndex} onPlayer={selectBoardPlayer} />)}</div></div></section></div>
+
+      <div className="dr-workspace">
+        <Panel title="Players" accessory={<span className="small">{available.length} shown</span>} className="dr-pool">
+          <div className="dr-pool-tools"><input type="search" aria-label="Search draft players" placeholder="Search players or NFL team" value={query} onChange={event => setQuery(event.target.value)} /><select aria-label="Draft position filter" value={position} onChange={event => setPosition(event.target.value)}>{['ALL', ...POSITIONS].map(pos => <option key={pos} value={pos}>{pos === 'ALL' ? 'All' : pos}</option>)}</select><label className="checkbox-label"><input type="checkbox" checked={availableOnly} onChange={event => setAvailableOnly(event.target.checked)} />Available only</label></div>
+          <div className="dr-pool-queue-context"><span>{ownViewedTeam ? 'Queue for' : 'Public roster · Queue private'} <b>{viewed.name}</b></span>{target && viewed.id !== target.id && <button type="button" className="link-button" onClick={() => setViewTeamId(target.id)}>View picking team</button>}</div>
+          <div className="dr-player-scroll"><table className="player-table"><thead><tr><th scope="col">Rank</th><th scope="col">Player</th><th scope="col">Pos</th><th scope="col">NFL</th><th scope="col">Queue</th></tr></thead><tbody>{available.map(player => <tr key={player.id} className={selectedId === player.id ? 'selected' : ''}><td>{player.rank}</td><td><button className="player-name" onClick={() => selectPlayer(player.id)}>{player.name}</button>{takenIds.has(player.id) && <span className="small taken">Drafted</span>}</td><td><PositionBadge position={player.position} /></td><td>{player.nflTeam}</td><td><button type="button" className="queue-button" disabled={!queueWritable || takenIds.has(player.id)} aria-label={`${viewQueue.includes(player.id) ? 'Remove' : 'Queue'} ${player.name} for ${viewed.name}`} onClick={() => { void toggleQueue(player.id); }}>{viewQueue.includes(player.id) ? '✓' : '+'}</button></td></tr>)}</tbody></table>{!available.length && <div className="empty-state"><b>No players found.</b><p>Try a different name or position.</p></div>}</div>
+        </Panel>
+
+        <Panel className="dr-research">{researchContent}</Panel>
+
+        <aside className="dr-sidebar" aria-label="Team roster and private draft queue">
+          <div className="dr-team-context"><label htmlFor="draft-view-team">Roster & queue</label><select id="draft-view-team" aria-label="Viewing team roster and queue" value={viewed.id} onChange={event => setViewTeamId(event.target.value)}>{state.managers.map(manager => <optgroup key={manager.id} label={manager.id === viewerId ? 'My teams' : `${manager.name}’s teams`}>{state.teams.filter(team => team.managerId === manager.id).map(team => <option key={team.id} value={team.id}>{team.name}</option>)}</optgroup>)}</select>{ownTeams.length > 1 && <div className="dr-my-team-switches" role="group" aria-label="Quick switch my teams">{ownTeams.map(team => <button key={team.id} aria-pressed={viewed.id === team.id} onClick={() => setViewTeamId(team.id)}>Team {team.name.match(/\d+$/)?.[0]}</button>)}</div>}</div>
+          <Panel title="Queue" accessory={<span className="small">{ownViewedTeam ? `${viewQueue.length} players · Private` : 'Private'}</span>} className="dr-queue"><div className="dr-queue-list" ref={queueListRef}>{!ownViewedTeam ? <div className="empty-state"><b>Private queue</b><p>Only this manager can view or edit their queue.</p></div> : !viewQueue.length ? <div className="empty-state"><b>Who’s next?</b><p>Use + to add players for {viewed.name}.</p></div> : viewQueue.map((id, index) => { const player = playerById(state, id); return player ? <div className="queue-row" data-queue-player-id={id} data-queue-team-id={viewed.id} key={id}><span>{index + 1}</span><div><button className="dr-queue-player" onClick={() => selectPlayer(id)}>{player.name}</button><small>{player.position} · {player.nflTeam}</small></div><button data-queue-direction="up" aria-label={`Move ${player.name} up`} disabled={!queueWritable || index === 0} onClick={event => reorderQueue(index, -1, event.detail === 0)}>↑</button><button data-queue-direction="down" aria-label={`Move ${player.name} down`} disabled={!queueWritable || index === viewQueue.length - 1} onClick={event => reorderQueue(index, 1, event.detail === 0)}>↓</button><button aria-label={`Remove ${player.name} from queue`} disabled={!queueWritable} onClick={() => { void toggleQueue(id); }}>×</button></div> : null; })}</div></Panel>
+          <Panel title="Roster" accessory={<span className="small">{viewed.playerIds.length}/6 drafted</span>} className="dr-roster"><div className="dr-roster-list">{SLOTS.map(slot => { const player = playerById(state, assignment[slot]); return <div className="compact-roster-row" key={slot}><span>{slot}</span>{player ? <><b>{player.name}</b><small>{player.position}</small></> : <em>Open</em>}</div>; })}</div></Panel>
+        </aside>
       </div>
     </>}
-    {researchOpen && <Modal title="Player research" className="mobile-player-sheet" onClose={() => setResearchOpen(false)}>{researchContent}</Modal>}
-    {confirmation && <Modal title="Confirm your pick" onClose={() => setConfirmation(null)}><div className="modal-body"><div className="eyebrow">Pick {pickLabel(confirmation.pickIndex)}</div><h2 className="dialog-player-name">{playerById(state, confirmation.playerId)?.name}</h2><p className="muted">{playerById(state, confirmation.playerId)?.position} · {playerById(state, confirmation.playerId)?.nflTeam}</p><div className="destination-card"><span>Drafting for</span><b>{teamById(state, confirmation.teamId)?.name}</b></div>{viewTeamId !== confirmation.teamId && <p className="hint">You’re viewing {viewed.name}. This pick still goes to {teamById(state, confirmation.teamId)?.name}.</p>}{dialogError && <p className="inline-error" role="alert">{dialogError}</p>}</div><div className="modal-actions"><Button onClick={() => setConfirmation(null)} disabled={pending}>Keep browsing</Button><Button variant="primary" onClick={() => { void submit(); }} disabled={pending || !writable || confirmation.pickIndex !== pickIndex || confirmation.teamId !== target?.id}>{pending ? 'Submitting…' : confirmation.pickIndex !== pickIndex || confirmation.teamId !== target?.id ? 'Turn has advanced' : 'Confirm pick'}</Button></div></Modal>}
-  </>;
+
+    {researchOpen && <Modal title="Player research" className="mobile-player-sheet dr-player-sheet" onClose={() => setResearchOpen(false)}>{researchContent}</Modal>}
+    {confirmation && <Modal title="Confirm your pick" onClose={() => setConfirmation(null)}><div className="modal-body"><div className="eyebrow">Pick {pickLabel(confirmation.pickIndex)}</div><h2 className="dialog-player-name">{playerById(state, confirmation.playerId)?.name}</h2><p className="muted">{playerById(state, confirmation.playerId)?.position} · {playerById(state, confirmation.playerId)?.nflTeam}</p><div className="destination-card"><span>Drafting for</span><b>{teamById(state, confirmation.teamId)?.name}</b></div>{viewTeamId !== confirmation.teamId && <p className="hint">You’re viewing {viewed.name}. This pick still goes to {teamById(state, confirmation.teamId)?.name}.</p>}{paused && <p className="field-warning" role="status">The draft is paused. Your original pick is preserved.</p>}{turnAdvanced && <p className="field-warning" role="status">The turn has advanced. Close this dialog to review the current pick.</p>}{dialogError && <p className="inline-error" role="alert">{dialogError}</p>}</div><div className="modal-actions"><Button onClick={() => setConfirmation(null)} disabled={pending}>Keep browsing</Button><Button variant="primary" onClick={() => { void submit(); }} disabled={pending || !writable || state.draft.status !== 'running' || turnAdvanced}>{pending ? 'Submitting…' : paused ? 'Draft paused' : turnAdvanced || complete ? 'Turn has advanced' : 'Confirm pick'}</Button></div></Modal>}
+  </div>;
 }
 
 function BoardRound({ state, round, pickIndex, onPlayer }: { state: LeagueState; round: number; pickIndex: number; onPlayer: (id: string) => void }) {

@@ -20,6 +20,7 @@ The first audience is established friends leagues with unusual rules. Native mob
 | [12 — Lineups and absorption](12-lineups-and-absorption.md) | Game-day design study and its relationship to current rules |
 | [13 — Build status and decisions](13-build-status-and-decisions.md) | Implemented behavior, validation evidence, limitations, and next gates |
 | [14 — Sports-data evaluation](14-sports-data-evaluation.md) | Provider evidence, pricing/rights comparison requirements, and blocked official-page access |
+| [15 — Draft room hierarchy](15-draft-room-hierarchy.md) | Current React draft layout, team scope, mobile workspaces, and interaction validation |
 
 Start with the brief, then review the worked QB rule and import prototype. Those make the product's hardest decisions concrete. Review the backlog after those decisions; it is not a promise to build every listed capability.
 

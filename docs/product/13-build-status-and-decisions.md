@@ -4,6 +4,8 @@ Status: working fixture product with React web, Expo/React Native, shared TypeSc
 
 Run instructions are in the [repository README](../../README.md). The [technical plan](11-technical-plan.md) describes architectural boundaries; this report distinguishes executable behavior from future product scope.
 
+The subsequent [draft hierarchy revision](15-draft-room-hierarchy.md) reorganizes the React workspace while preserving the draft command contract. It passed focused browser checks and web build/type checks locally. It requires a manual Render application deployment before live visual review; the user-verified results above refer to the preceding hosted revision.
+
 ## What works
 
 | Journey | Current behavior | Boundary |
